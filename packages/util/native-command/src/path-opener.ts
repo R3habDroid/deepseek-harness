@@ -16,6 +16,7 @@ import { isWsl } from './host-environment.ts'
 import { dirname, extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
+import { runWindowsInterop } from './windows-interop.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
 export type PathOpenerRunner = NativeCommandRunner
@@ -129,7 +130,7 @@ function explorerTarget(windowsPath: string): string {
 async function runExplorer(args: readonly string[], signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
   try {
     // SW_HIDE also hides Explorer's folder window, not just console windows.
-    await run('explorer.exe', args, signal, 'visible')
+    await runWindowsInterop('explorer.exe', 'explorer.exe', args, signal, run, 'visible')
   } catch (error: unknown) {
     signal.throwIfAborted()
     // Explorer can exit 1 after delegating to the existing desktop process.

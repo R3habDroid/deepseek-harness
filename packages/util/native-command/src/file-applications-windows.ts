@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NativeCommandRunner } from './runner.ts'
+import { runWindowsInterop } from './windows-interop.ts'
 
 /** Shell interfaces are declared in their native vtable order; Invoke preserves packaged-app and DDE handling. */
 const WINDOWS_ASSOCIATIONS = String.raw`
@@ -266,9 +267,11 @@ ${application === null ? 'ConvertTo-Json -InputObject @([DshFileAssociations]::L
   const scriptPath = join(directory, 'associations.ps1')
   try {
     await writeFile(scriptPath, `\uFEFF${script}`, 'utf8')
-    const result = await run('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
-    ], signal, 'hidden')
+    const result = await runWindowsInterop(
+      'powershell.exe', 'System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      signal, run, 'hidden',
+    )
     return result.stdout
   } finally {
     await rm(directory, { recursive: true, force: true })
