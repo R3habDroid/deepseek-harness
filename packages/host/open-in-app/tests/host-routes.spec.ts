@@ -49,7 +49,7 @@ function pathTable(entries: Record<string, string> = {}): (name: string) => Prom
 
 /** Boot webserver + open-in-app rows through the real Loader. */
 async function boot(layers: readonly LaunchEnvironmentLayerInput[] = []): Promise<string> {
-  internals.catalog = { env: {}, ...internals.catalog }
+  internals.catalog = { env: {}, osRelease: '6.0.0-dsh-spec', ...internals.catalog }
   root = await mkdtemp(join(tmpdir(), 'dsh-open-in-app-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [

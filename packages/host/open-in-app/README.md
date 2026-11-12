@@ -56,6 +56,7 @@ The catalog is a fixed whitelist covering editors and IDEs (Cursor, VS Code and 
 - **macOS** checks the known application directories (`/Applications`, `~/Applications`) for the entry's bundle spellings and launches `open -a <resolved bundle>`; Xcode follows `xcode-select -p`, so Beta or renamed installs are found. No Launch Services query and no disk scan runs.
 - **Windows** reads the `App Paths` registry keys, then the Uninstall records (kept only when they prove an executable on disk), then well-known install paths and the newest versioned install directory where an application uses one. GitHub Desktop resolves its versioned executable together with the packaged `cli.js` and invokes the supported `github open <path>` behavior without a command shell. Registry reads are batched, one `reg.exe query` per root per resolution pass.
 - **Linux and Windows CLI names** resolve in-process through the composition's subprocess capability (PATH/PATHEXT stat, no shell, no `which`); Linux GUI entries whose CLI is off PATH fall back to their XDG desktop entry's verified `TryExec`/`Exec` executable, and the `xdg-open` file-manager entry appears only when the host announces a display server.
+- **WSL** resolves only the entries that declare a `wsl` source: its Linux entries launch X11 helpers the host cannot run, while the Windows File Explorer reaches the desktop through interop and receives a Windows path from the path opener. The icon route answers 404 there, because no icon source describes a Windows executable from this host.
 
 ### What to expect
 

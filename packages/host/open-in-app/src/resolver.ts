@@ -17,7 +17,8 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir, platform as osPlatform } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import {
-  canOpenNativePath, openNativePath, runNativeCommand, desktopEntryFields, desktopDataDirectories, type NativeCommandRunner,
+  canOpenNativePath, isWsl, openNativePath, runNativeCommand, desktopEntryFields, desktopDataDirectories,
+  type NativeCommandRunner,
 } from '@deepseek-ai/dsh-native-command'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import {
@@ -100,6 +101,10 @@ export interface OpenInAppInternals {
   platform?: NodeJS.Platform
   /** SSH launch fact from the inherited process layer, independent of `.env` values. */
   ssh?: boolean
+  /** Whether this Linux host borrows the Windows desktop through WSL interop. */
+  wsl?: boolean
+  /** Kernel release naming this Linux host; replaces the running kernel's answer. */
+  osRelease?: string
   /** Bundle-directory roots replacing `/Applications` and `~/Applications`. */
   applicationRoots?: readonly string[]
   /** Environment for `${VAR}`/`%VAR%` expansion in candidates and registry values. */
@@ -115,6 +120,9 @@ export interface OpenInAppInternals {
 /** Platform facts after the one explicit defaulting step at each public entry. */
 export interface ResolvedInternals {
   platform: NodeJS.Platform
+  wsl: boolean
+  /** Kernel release facts supplied by the caller; absent reads the running kernel. */
+  osRelease?: string
   ssh: boolean
   applicationRoots: readonly string[]
   env: Readonly<Record<string, string | undefined>>
@@ -138,11 +146,17 @@ export function resolveInternals(internals: OpenInAppInternals): ResolvedInterna
   if (resolveExecutable === undefined) {
     throw new Error('open-in-app: internals.resolveExecutable is required (the subprocess capability provides it)')
   }
+  const hostPlatform = internals.platform ?? osPlatform()
+  const env = internals.env ?? process.env
   return {
-    platform: internals.platform ?? osPlatform(),
+    platform: hostPlatform,
+    wsl: internals.wsl ?? isWsl({
+      platform: hostPlatform, env, ...internals.osRelease === undefined ? {} : { osRelease: internals.osRelease },
+    }),
+    ...internals.osRelease === undefined ? {} : { osRelease: internals.osRelease },
     ssh: internals.ssh ?? false,
     applicationRoots: internals.applicationRoots ?? ['/Applications', join(home, 'Applications')],
-    env: internals.env ?? process.env,
+    env,
     home,
     run: internals.run ?? runNativeCommand,
     launch: internals.launch ?? launchDetachedApp,
@@ -442,12 +456,20 @@ export function execCommand(exec: string | undefined): string | null {
 }
 
 /**
- * The catalog entry's spec for one platform.
+ * The catalog entry's spec for one host.
+ *
+ * A WSL host resolves only specs declared for `wsl`: its Linux entries launch
+ * X11 helpers that cannot run there, while its paths still reach the Windows
+ * desktop through interop.
  * @param app - catalog entry.
  * @param platform - host platform.
- * @returns the declared spec; undefined off the declared three platforms.
+ * @param wsl - whether the host is a Linux process inside WSL.
+ * @returns the declared spec; undefined when this host declares none.
  */
-export function specFor(app: OpenInAppApp, platform: NodeJS.Platform): OpenInAppPlatformSpec | undefined {
+export function specFor(
+  app: OpenInAppApp, platform: NodeJS.Platform, wsl = false,
+): OpenInAppPlatformSpec | undefined {
+  if (wsl) return app.platforms.wsl
   return platform === 'darwin' || platform === 'win32' || platform === 'linux'
     ? app.platforms[platform]
     : undefined
@@ -469,8 +491,9 @@ async function locate(
     case 'fixed': {
       // A fixed entry ships with its OS, so the icon path is trusted rather
       // than probed (a somehow-missing file surfaces as a 404 at extraction);
-      // only an unset variable (`${SystemRoot}`) drops the icon claim.
-      const iconPath = expandCandidate(locator.iconPath, internals)
+      // only an unset variable (`${SystemRoot}`) or an absent icon drops the
+      // icon claim.
+      const iconPath = locator.iconPath === undefined ? null : expandCandidate(locator.iconPath, internals)
       const icon = iconPath === null
         ? undefined
         : internals.platform === 'win32'
@@ -507,6 +530,7 @@ async function locate(
       if (locator.requiresDesktop === true && !canOpenNativePath({
         platform: internals.platform,
         env: { ...internals.env },
+        ...internals.osRelease === undefined ? {} : { osRelease: internals.osRelease },
       })) return null
       const found = await internals.resolveExecutable(locator.name)
       return found === null
@@ -624,7 +648,7 @@ async function resolveWithRegistry(
   registry: RegistryViewOnce,
   internals: ResolvedInternals,
 ): Promise<OpenInAppResolvedLaunch | null> {
-  const platformSpec = specFor(app, internals.platform)
+  const platformSpec = specFor(app, internals.platform, internals.wsl)
   if (platformSpec === undefined) return null
   for (const locator of platformSpec.locators) {
     const found = await locate(locator, probeTimeoutMs, registry, internals)

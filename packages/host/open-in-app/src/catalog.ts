@@ -6,8 +6,15 @@
  * an empty catalog.
  */
 
-/** Platforms the catalog declares entries for; any other host resolves as empty. */
+/** Operating systems the catalog declares entries for; any other host resolves as empty. */
 export type OpenInAppPlatform = 'darwin' | 'win32' | 'linux'
+
+/**
+ * Host kinds a catalog entry may target: the three operating systems plus
+ * `wsl`, a Linux process whose desktop belongs to the Windows host it
+ * interoperates with.
+ */
+export type OpenInAppHost = OpenInAppPlatform | 'wsl'
 
 /** Launch-args token carrying the workspace directory (`--cd={path}`). */
 export const PATH_TOKEN = '{path}'
@@ -53,8 +60,11 @@ export type OpenInAppLocator =
   | {
     readonly kind: 'fixed'
     readonly launch: OpenInAppLaunch
-    /** Icon source template (`.app` directory on macOS, executable on Windows). */
-    readonly iconPath: string
+    /**
+     * Icon source template (`.app` directory on macOS, executable on Windows).
+     * Absent when this host offers no icon route for the application.
+     */
+    readonly iconPath?: string
   }
   | { readonly kind: 'app'; readonly fsNames: readonly string[] }
   | { readonly kind: 'xcode' }
@@ -96,10 +106,10 @@ export interface OpenInAppPlatformSpec {
   readonly desktopId?: string
 }
 
-/** One launchable application and the platforms that can offer it. */
+/** One launchable application and the platform hosts that can offer it. */
 export interface OpenInAppApp {
   readonly id: string
-  readonly platforms: Readonly<Partial<Record<OpenInAppPlatform, OpenInAppPlatformSpec>>>
+  readonly platforms: Readonly<Partial<Record<OpenInAppHost, OpenInAppPlatformSpec>>>
 }
 
 /** macOS spec checking the known application directories for the named bundles. */
@@ -197,6 +207,10 @@ export const OPEN_IN_APP_CATALOG: readonly OpenInAppApp[] = [
         launch: { kind: 'shell-open' },
         iconPath: '${SystemRoot}/explorer.exe',
       }),
+      // A WSL host owns no X11 desktop and borrows the Windows one: the path
+      // opener already translates the directory before the Shell sees it, and
+      // no icon route reaches a Windows executable from this host.
+      wsl: spec({ kind: 'fixed', launch: { kind: 'shell-open' } }),
     },
   },
   { id: 'filemanager', platforms: { linux: spec(desktopCli('xdg-open')) } },

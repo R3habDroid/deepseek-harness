@@ -147,6 +147,10 @@ export async function extractAppIcon(
   internals: OpenInAppInternals = {},
 ): Promise<OpenInAppIcon | null> {
   const completed = resolveInternals(internals)
+  // A WSL host serves no icon for a Windows application: its XDG themes do not
+  // describe one, and Windows extraction reads an executable the icon routes
+  // cannot address.
+  if (completed.wsl) return null
   if (completed.platform === 'linux') {
     const desktopId = specFor(app, completed.platform)?.desktopId
     return desktopId === undefined ? null : extractLinuxIcon(desktopId, completed)

@@ -36,6 +36,8 @@ function byId(id: string): OpenInAppApp {
 /** Internals baseline every call completes: a rejecting runner and an empty PATH. */
 function bare(overrides: OpenInAppInternals): OpenInAppInternals {
   return {
+    // A desktop-Linux kernel keeps host detection off the running machine.
+    osRelease: '6.0.0-dsh-spec',
     run: () => Promise.reject(new Error('fixture rejects')),
     resolveExecutable: () => Promise.resolve(null),
     ...overrides,
@@ -195,6 +197,15 @@ describe('Windows executable icons', () => {
     for (const out of outs) {
       await expect(stat(dirname(out))).rejects.toThrow()
     }
+  })
+})
+
+describe('WSL host icons', () => {
+  it('serves no icon, because no icon source addresses a Windows executable', async () => {
+    const icon = await extractAppIcon(
+      byId('explorer'), { launch: { kind: 'shell-open' } }, TIMEOUT_MS, bare({ platform: 'linux', wsl: true }),
+    )
+    expect(icon).toBeNull()
   })
 })
 

@@ -52,9 +52,14 @@ function byId(id: string): OpenInAppApp {
   return app
 }
 
-/** Internals baseline every call completes: a rejecting runner and an empty PATH. */
+/**
+ * Internals baseline every call completes: a rejecting runner, an empty PATH,
+ * and a desktop-Linux kernel so host detection never reads the running one.
+ */
 function bare(overrides: OpenInAppInternals): OpenInAppInternals {
-  return { env: {}, run: runner(() => null), resolveExecutable: pathTable(), ...overrides }
+  return {
+    env: {}, osRelease: '6.0.0-dsh-spec', run: runner(() => null), resolveExecutable: pathTable(), ...overrides,
+  }
 }
 
 /** Hermetic Linux environment: XDG lookups stay inside the temp home. */
@@ -97,6 +102,18 @@ describe('resolveOpenInAppApps', () => {
     expect(resolveExecutable).not.toHaveBeenCalled()
   })
 
+  it('offers Explorer, and no X11 launcher, when the Linux host is WSL', async () => {
+    const run = vi.fn<NativeCommandRunner>()
+    const resolveExecutable = vi.fn(pathTable({ 'xdg-open': '/usr/bin/xdg-open' }))
+    const map = await resolveOpenInAppApps(TIMEOUT_MS, bare({
+      platform: 'linux', wsl: true, run, resolveExecutable,
+    }))
+    expect([...map.keys()]).toEqual(['explorer'])
+    expect(map.get('explorer')?.launch).toEqual({ kind: 'shell-open' })
+    expect(run).not.toHaveBeenCalled()
+    expect(resolveExecutable).not.toHaveBeenCalled()
+  })
+
   it('resolves macOS entries from the known application directories, in menu order', async () => {
     const home = await tempRoot()
     const applications = join(home, 'Applications')
@@ -121,12 +138,21 @@ describe('resolveOpenInAppApps', () => {
     const home = await tempRoot()
     const run = vi.fn<NativeCommandRunner>()
     const map = await resolveOpenInAppApps(TIMEOUT_MS, {
-      platform: 'linux', home, env: { ...linuxEnv(home), DISPLAY: ':0' }, run,
+      platform: 'linux', osRelease: '6.0.0-dsh-spec', home, env: { ...linuxEnv(home), DISPLAY: ':0' }, run,
       resolveExecutable: pathTable({ 'xdg-open': '/usr/bin/xdg-open', code: '/usr/bin/code', ghostty: '/usr/bin/ghostty' }),
     })
     expect([...map.keys()]).toEqual(['filemanager', 'vscode', 'ghostty'])
     expect(map.get('ghostty')?.launch).toEqual({ kind: 'argv', command: '/usr/bin/ghostty', args: ['--working-directory={path}'] })
     expect(run).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Linux catalog on a Linux host that is not WSL', async () => {
+    const home = await tempRoot()
+    const map = await resolveOpenInAppApps(TIMEOUT_MS, bare({
+      platform: 'linux', wsl: false, home, env: { ...linuxEnv(home), DISPLAY: ':0' },
+      resolveExecutable: pathTable({ 'xdg-open': '/usr/bin/xdg-open' }),
+    }))
+    expect([...map.keys()]).toEqual(['filemanager'])
   })
 
   it('does not offer the Linux file manager without a desktop session', async () => {
